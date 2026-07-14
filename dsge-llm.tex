@@ -1,0 +1,49 @@
+%% main.tex — Documento principal de la tesis
+%% dsge-llm: Modelos DSGE vs Agentes LLM Heterogéneos para la Economía Argentina
+
+\documentclass[12pt, a4paper, oneside]{book}
+
+\input{preamble}
+
+%% ─── Metadatos ────────────────────────────────────────────────────────────────
+\title{%
+  \textbf{Modelos DSGE vs Agentes LLM Heterogéneos:}\\[0.5em]
+  \large Una Comparación para la Economía Argentina
+}
+\author{José Carlos Carbone}
+\date{\today}
+
+%% ─── Documento ────────────────────────────────────────────────────────────────
+\begin{document}
+
+\frontmatter
+\maketitle
+\tableofcontents
+\listoffigures
+\listoftables
+
+\mainmatter
+\part{Nucleo académico}
+\include{chapters/01-introduccion}
+\include{chapters/02-marco-teorico}
+\include{chapters/03-estado-del-arte}
+
+\part{Investigación Académica y Validación del MVP}
+\include{chapters/04-metodologia-simulacion}
+\include{chapters/05-resultados-dsge}
+\include{chapters/06-resultados-agentes}
+\include{chapters/07-comparacion-shocks}
+
+\part{Factibilidad Comercial y Plan de Negocios}
+\include{chapters/08-mercado-potencial}
+\include{chapters/09-benchmark}
+\include{chapters/10-plan-operativo}
+\include{chapters/11-cashflow}
+
+\part{Conclusiones Generales}
+\include{chapters/12-conclusiones-y-futuro}
+\backmatter
+
+\printbibliography[heading=bibintoc, title={Referencias}]
+
+\end{document}

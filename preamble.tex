@@ -1,0 +1,85 @@
+%% preamble.tex — Paquetes y configuración de estilo académico
+
+%% ─── Codificación y lenguaje ──────────────────────────────────────────────────
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[spanish, es-nodecimaldot, es-noquoting, english]{babel}
+\selectlanguage{spanish}
+
+%% ─── Página y espaciado ───────────────────────────────────────────────────────
+\usepackage[
+  a4paper,
+  top=3cm, bottom=3cm,
+  left=3cm, right=2.5cm
+]{geometry}
+\usepackage[onehalfspacing]{setspace}
+
+%% ─── Matemáticas ──────────────────────────────────────────────────────────────
+\usepackage{amsmath, amssymb, amsthm}
+\usepackage{mathtools}
+
+%% Entornos matemáticos
+\newtheorem{theorem}{Teorema}[chapter]
+\newtheorem{proposition}[theorem]{Proposición}
+\newtheorem{definition}[theorem]{Definición}
+\newtheorem{remark}[theorem]{Observación}
+
+%% ─── Figuras y tablas ─────────────────────────────────────────────────────────
+\usepackage{graphicx}
+\usepackage[export]{adjustbox}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{longtable}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{float}
+\graphicspath{{figures/}}
+
+%% ─── Código y listings ────────────────────────────────────────────────────────
+\usepackage{listings}
+\usepackage{xcolor}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  frame=single,
+  captionpos=b,
+  keywordstyle=\color{blue!70!black},
+  commentstyle=\color{green!50!black},
+  stringstyle=\color{orange!80!black}
+}
+
+%% ─── Bibliografía (biblatex + biber) ─────────────────────────────────────────
+\usepackage[
+  backend=biber,
+  style=authoryear,
+  natbib=true,
+  sorting=nyt,
+  maxbibnames=99,
+  maxcitenames=2,
+  uniquelist=false
+]{biblatex}
+\addbibresource{references.bib}
+
+%% ─── Utilidades ───────────────────────────────────────────────────────────────
+\usepackage{enumitem}
+\usepackage{microtype}
+\usepackage{soul}
+\usepackage{csquotes}          % requerido por biblatex con babel
+
+%% ─── Hipervínculos (SIEMPRE al final del preámbulo) ──────────────────────────
+\usepackage[
+  colorlinks=true,
+  linkcolor=blue!70!black,
+  citecolor=green!50!black,
+  urlcolor=blue!80!black,
+  pdftitle={Modelos DSGE vs Agentes LLM Heterogéneos},
+  pdfauthor={},
+  pdfsubject={Macroeconomía Computacional},
+  pdfkeywords={DSGE, LLM, agentes, Argentina, simulación}
+]{hyperref}
+
+%% ─── Comandos custom para tesis en progreso ───────────────────────────────────
+\newcommand{\placeholder}[1]{\textcolor{gray!70}{\textit{[#1]}}}
+\newcommand{\todoc}[1]{\textcolor{red!80!black}{\textbf{[TODO: #1]}}}
+\newcommand{\citeneeded}{\textsuperscript{\textcolor{red}{[cita]}}}
