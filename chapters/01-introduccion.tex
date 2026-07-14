@@ -34,9 +34,8 @@ de esas diferencias.
 \noindent\textbf{Objetivos específicos:}
 
 \begin{enumerate}
-    \item Revisar el estado del arte de los modelos DSGE, los modelos basados en agentes
-    (ABM) y el uso de LLMs en simulación macroeconómica, identificando los gaps de
-    investigación que esta tesis puede llenar.
+    \item Revisar el estado del arte de los modelos DSGE y el uso de LLMs en simulación macroeconómica
+    identificando los gaps de investigación que esta tesis puede llenar.
 
     \item Implementar y calibrar un modelo DSGE para Argentina basado en el framework
     de economía abierta pequeña de \citet{GaliMonacelli2005}, extendido con las
@@ -65,28 +64,27 @@ Esta tesis realiza cinco contribuciones a la literatura de simulación macroecon
 computacional:
 
 \begin{enumerate}
-    \item \textbf{Comparación LLM--DSGE con datos argentinos.} Es el primer trabajo que
-    enfrenta directamente un sistema de agentes LLM con un modelo DSGE calibrado usando
-    datos reales de Argentina (INDEC/BCRA), llenando el gap identificado en la literatura
-    donde los trabajos existentes \citep{EconAgent2024, EconGrowthAgent2025} operan con
-    economías sin especificar o datos sintéticos.
+    \item \textbf{Comparación LLM--DSGE con datos argentinos.} Enfrenta directamente un sistema 
+    de agentes LLM con un modelo DSGE calibrado usando datos reales de Argentina (INDEC/BCRA), 
+    llenando el gap identificado en la literatura donde los trabajos existentes \citep{EconAgent2024, EconGrowthAgent2025} 
+    operan con economías sin especificar o datos sintéticos.
 
     \item \textbf{Modelado de economía bimonetaria con agentes LLM.} La dualidad ARS/USD
     ---con sus múltiples tipos de cambio, restricciones al acceso de divisas, y estrategias
     de cobertura de los agentes--- constituye un rasgo estructural de la economía argentina
-    que ningún modelo de agentes LLM ha intentado capturar. Este trabajo propone la primera
-    representación formal de la bimonetarismo como atributo de estado de los agentes.
+    que en la bibliografía relevada ningún modelo de agentes LLM ha intentado capturar. 
+    Este trabajo propone una representación formal de la bimonetarismo como atributo de estado de los agentes.
 
     \item \textbf{Arquitectura multi-LLM con heterogeneidad de modelos.} Los trabajos
-    existentes utilizan un único LLM para todos los agentes, induciendo heterogeneidad solo
+    relevados existentes utilizan un único LLM para todos los agentes, induciendo heterogeneidad solo
     vía variaciones de prompt \citep{EconAgent2024}. Esta tesis propone y evalúa una
     arquitectura donde el modelo de lenguaje asignado a cada agente varía según su tipo
     económico, explotando la diversidad de capacidades cognitivas entre modelos.
 
     \item \textbf{Protocolo de benchmark cuantitativo formal.} Se propone un protocolo
     estandarizado de comparación entre LLM y DSGE basado en las mismas métricas usadas
-    para evaluar modelos DSGE en la literatura canónica \citep{SmetsWouters2007}, haciendo
-    la comparación reproducible e interpretable para la comunidad macroeconométrica.
+    para evaluar modelos DSGE en la literatura de base \citep{SmetsWouters2007}, haciendo
+    la comparación reproducible e interpretable.
 
     \item \textbf{Análisis de shocks de economías emergentes.} Los trabajos de LLM en
     economía estudian shocks genéricos en economías desarrolladas. Este trabajo evalúa
