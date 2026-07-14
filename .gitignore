@@ -1,0 +1,59 @@
+## Data
+data/raw/
+data/processed/*.parquet
+data/processed/*.csv
+
+## Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+*.egg-info/
+dist/
+build/
+
+node_modules
+dis
+
+## Jupyter Notebook / IDE
+.ipynb_checkpoints/
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+## Tests / tooling
+.pytest_cache/
+
+## LaTeX build artifacts
+*.aux
+*.log
+*.out
+*.toc
+*.bbl
+*.blg
+*.bcf
+*.run.xml
+*.lof
+*.lot
+*.fdb_latexmk
+*.fls
+*.synctex.gz
+*.pdf.back
+dsge-llm/thesis/main.pdf
+
+## Binary outputs / results
+*.pkl
+results/*.png
+results/*.pdf
+results/*.csv
+
+## OS
+.DS_Store
+Thumbs.db
