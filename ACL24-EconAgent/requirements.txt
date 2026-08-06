@@ -1,7 +1,9 @@
+boto3
 fire
 lz4
 matplotlib
 numpy
+ollama
 openai
 pandas
 python-dateutil
