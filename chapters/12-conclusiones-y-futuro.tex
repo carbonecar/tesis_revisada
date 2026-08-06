@@ -12,5 +12,36 @@
 \section{Limitaciones}
 \label{sec:limitaciones}
 
+Las principales limitaciones de este trabajo son:
+
+\begin{enumerate}
+  \item \textbf{Riesgo de contaminación de datos (\textit{data contamination}) en el
+  período de evaluación}: el protocolo de benchmark compara los pronósticos del DSGE
+  y del sistema de agentes LLM contra datos realizados en el tramo
+  2023T1--2024T4 (\texttt{EVAL\_START}/\texttt{EVAL\_END} en
+  \texttt{dsge/evaluation.py}). Los modelos utilizados para los agentes
+  (\texttt{gpt-4o-mini}, \texttt{claude-haiku-4-5}, \texttt{claude-sonnet-4-6}) tienen
+  fechas de corte de entrenamiento posteriores a ese período, y la crisis
+  macroeconómica argentina de 2023--2024 (inflación superior al 200\% anual,
+  elección presidencial de noviembre de 2023, devaluación post-electoral,
+  unificación cambiaria, debate de dolarización) tuvo cobertura mediática
+  internacional extensa. Esto implica que los agentes LLM pueden tener acceso, vía
+  memoria paramétrica, a los resultados macroeconómicos reales del propio período
+  que se les pide pronosticar. El prompt de cada agente incluye además el período
+  calendario exacto (\texttt{"Período: \{state.period\}"} en
+  \texttt{agents/base.py}), lo cual facilita que el modelo asocie el estado
+  simulado con el episodio histórico real en lugar de generar una decisión a partir
+  únicamente de las variables de estado provistas. A diferencia del DSGE --cuyo
+  pronóstico es una extrapolación genuinamente fuera de muestra a partir de
+  parámetros estimados en 2016--2022, sin acceso a los datos de 2023--2024--, no es
+  posible garantizar que las decisiones de los agentes LLM constituyan un ejercicio
+  de pronóstico genuino y no, parcial o totalmente, una recuperación de información
+  memorizada durante el entrenamiento. Esta asimetría amenaza la validez interna de
+  la comparación DSGE~vs.~agentes para el tramo evaluado y debería tratarse como una
+  limitación central al interpretar cualquier resultado donde los agentes LLM
+  igualen o superen al DSGE en las métricas de error.
+
+\end{enumerate}
+
 \section{Trabajo Futuro}
 \label{sec:trabajo-futuro}

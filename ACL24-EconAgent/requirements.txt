@@ -1,0 +1,11 @@
+fire
+lz4
+matplotlib
+numpy
+openai
+pandas
+python-dateutil
+python-dotenv
+pyyaml
+scipy
+seaborn
