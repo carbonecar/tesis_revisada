@@ -1,6 +1,7 @@
 """Adaptadores de LLM para simulate.py. El backend se elige con ECON_BACKEND
 (openai | ollama | bedrock) y cada uno expone la misma firma de get_completion.
 """
+import logging
 import multiprocessing
 import os
 from functools import partial
@@ -10,9 +11,16 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+logging.basicConfig(
+    level=os.getenv("LOG_LEVEL", "INFO"),
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+logger = logging.getLogger(__name__)
+
 ECON_BACKEND = os.getenv("ECON_BACKEND", "openai").lower()
 MAX_RETRIES = 20
 RETRY_DELAY_SECONDS = 6
+MAX_RETRY_DELAY_SECONDS = 60
 
 # Precio por 1k tokens (prompt, completion). Modelos ausentes -> costo 0
 # (backends locales como Ollama, o modelos de Bedrock sin tarifa cargada).
@@ -28,15 +36,36 @@ def _cost(model, prompt_tokens, completion_tokens):
     return prompt_tokens / 1000 * prompt_cost_1k + completion_tokens / 1000 * completion_cost_1k
 
 
+def _retry_delay(attempt, exception):
+    # Los SDK de OpenAI/boto3 exponen la respuesta HTTP en .response; si el
+    # servidor nos dice cuánto esperar (429 con Retry-After), lo respetamos.
+    response = getattr(exception, "response", None)
+    if response is not None:
+        retry_after = getattr(response, "headers", {}).get("retry-after")
+        if retry_after:
+            try:
+                return float(retry_after)
+            except ValueError:
+                pass
+        if getattr(response, "status_code", None) == 429:
+            return min(RETRY_DELAY_SECONDS * (2 ** attempt), MAX_RETRY_DELAY_SECONDS)
+    return RETRY_DELAY_SECONDS
+
+
 def _with_retries(call):
     for i in range(MAX_RETRIES):
         try:
             return call()
         except Exception as e:
             if i < MAX_RETRIES - 1:
-                sleep(RETRY_DELAY_SECONDS)
+                delay = _retry_delay(i, e)
+                logger.debug(
+                    "Retry %d/%d after %s: %s (esperando %.1fs)",
+                    i + 1, MAX_RETRIES, type(e).__name__, e, delay,
+                )
+                sleep(delay)
             else:
-                print(f"An error of type {type(e).__name__} occurred: {e}")
+                logger.warning("Gave up after %d retries: %s: %s", MAX_RETRIES, type(e).__name__, e)
                 return "Error", 0.0
 
 
@@ -122,7 +151,10 @@ def get_completion(dialogs, temperature=0, max_tokens=100):
         raise ValueError(
             f"ECON_BACKEND='{ECON_BACKEND}' desconocido. Opciones: {list(_BACKENDS)}"
         )
-    return backend(dialogs, temperature, max_tokens)
+    logger.debug("-> [%s] dialogs=%r", ECON_BACKEND, dialogs)
+    response, cost = backend(dialogs, temperature, max_tokens)
+    logger.debug("<- [%s] cost=%.5f response=%r", ECON_BACKEND, cost, response)
+    return response, cost
 
 
 def get_multiple_completion(dialogs, num_cpus=15, temperature=0, max_tokens=100):

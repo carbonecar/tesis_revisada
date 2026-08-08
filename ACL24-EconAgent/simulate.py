@@ -1,8 +1,11 @@
 from typing import Optional
 import argparse
 import fire
+import logging
 import os
 import sys
+
+logger = logging.getLogger(__name__)
 
 import ai_economist.foundation as foundation
 import numpy as np
@@ -10,6 +13,7 @@ import matplotlib.pyplot as plt
 import yaml
 from time import time
 from collections import defaultdict
+import json
 import re
 from simulate_utils import *
 import pickle as pkl
@@ -19,7 +23,15 @@ from dateutil.relativedelta import relativedelta
 with open('config.yaml', "r") as f:
     run_configuration = yaml.safe_load(f)
 env_config = run_configuration.get('env')
-        
+
+def extract_action(content):
+    # Los modelos suelen envolver el JSON pedido en explicaciones o fences ```json.
+    match = re.search(r'\{.*?\}', content, re.DOTALL)
+    if match is None:
+        raise ValueError("no se encontró un objeto JSON en la respuesta")
+    data = json.loads(match.group(0))
+    return [data['work'], data['consumption']]
+
 def gpt_actions(env, obs, dialog_queue, dialog4ref_queue, gpt_path, gpt_error, total_cost):
     if not os.path.exists(gpt_path):
         os.makedirs(gpt_path)
@@ -98,20 +110,28 @@ def gpt_actions(env, obs, dialog_queue, dialog4ref_queue, gpt_path, gpt_error, t
         else:
             return (actions[0] >= 0) & (actions[0] <= 1) & (actions[1] >= 0) & (actions[1] <= 1)
     if env.world.timestep%3 == 0 and env.world.timestep > 0:
-        results, cost = get_multiple_completion([list(dialogs)[:2] + list(dialog4ref)[-3:-1] + list(dialogs)[-1:] for dialogs, dialog4ref in zip(dialog_queue, dialog4ref_queue)])
+        results, cost = get_multiple_completion([list(dialogs)[:2] + list(dialog4ref)[-3:-1] + list(dialogs)[-1:] for dialogs, dialog4ref in zip(dialog_queue, dialog4ref_queue)], num_cpus=10, max_tokens=300)
         total_cost += cost
     else:
-        results, cost = get_multiple_completion([list(dialogs) for dialogs in dialog_queue])
+        results, cost = get_multiple_completion([list(dialogs) for dialogs in dialog_queue], num_cpus=8, max_tokens=300)
         total_cost += cost
     actions = {}
     for idx in range(env.num_agents):
         content = results[idx]
         try:
-            extracted_actions = list(eval(content).values())
+            extracted_actions = extract_action(content)
             if not action_check(extracted_actions):
+                logger.warning(
+                    "step %d agent %d: invalid action values %r, content=%r",
+                    env.world.timestep, idx, extracted_actions, content,
+                )
                 extracted_actions = [1, 0.5]
                 gpt_error += 1
-        except:
+        except Exception as e:
+            logger.warning(
+                "step %d agent %d: could not parse action (%s: %s), content=%r",
+                env.world.timestep, idx, type(e).__name__, e, content,
+            )
             extracted_actions = [1, 0.5]
             gpt_error += 1
         extracted_actions[0] = int(np.random.uniform() <= extracted_actions[0])
@@ -132,7 +152,7 @@ def gpt_actions(env, obs, dialog_queue, dialog4ref_queue, gpt_path, gpt_error, t
         for idx in range(env.num_agents):
             # dialog_queue[idx].append({'role': 'user', 'content': reflection_prompt})
             dialog4ref_queue[idx].append({'role': 'user', 'content': reflection_prompt})
-        results, cost = get_multiple_completion([list(dialogs) for dialogs in dialog4ref_queue], temperature=0, max_tokens=200)
+        results, cost = get_multiple_completion([list(dialogs) for dialogs in dialog4ref_queue], num_cpus=8, temperature=0, max_tokens=200)
         total_cost += cost
         for idx in range(env.num_agents):
             content = results[idx]
