@@ -23,17 +23,71 @@ RETRY_DELAY_SECONDS = 6
 MAX_RETRY_DELAY_SECONDS = 60
 
 # Precio por 1k tokens (prompt, completion). Modelos ausentes -> costo 0
-# (backends locales como Ollama, o modelos de Bedrock sin tarifa cargada).
+# a menos que PRICE_INPUT_PER_1M / PRICE_OUTPUT_PER_1M estén seteadas (ver _cost).
 PRICING = {
     "gpt-4o-mini": (0.00015, 0.0006),
     "gpt-3.5-turbo-0613": (0.001, 0.002),
     "gpt-4o": (0.0025, 0.01),
+    "us.anthropic.claude-sonnet-4-6": (0.003, 0.015),
 }
+
+# Override manual de precio (USD por 1M tokens), útil para Bedrock u otros
+# modelos ausentes de PRICING. Si están seteadas, tienen prioridad sobre PRICING.
+_PRICE_INPUT_PER_1M = os.getenv("PRICE_INPUT_PER_1M")
+_PRICE_OUTPUT_PER_1M = os.getenv("PRICE_OUTPUT_PER_1M")
+
+_warned_models: set[str] = set()
+
+# Acumuladores globales de uso real (tokens), visibles vía get_usage_summary().
+_usage_totals = {"prompt_tokens": 0, "completion_tokens": 0, "calls": 0}
 
 
 def _cost(model, prompt_tokens, completion_tokens):
+    _usage_totals["prompt_tokens"] += prompt_tokens
+    _usage_totals["completion_tokens"] += completion_tokens
+    _usage_totals["calls"] += 1
+
+    if _PRICE_INPUT_PER_1M is not None and _PRICE_OUTPUT_PER_1M is not None:
+        price_in_1m = float(_PRICE_INPUT_PER_1M)
+        price_out_1m = float(_PRICE_OUTPUT_PER_1M)
+        return prompt_tokens / 1_000_000 * price_in_1m + completion_tokens / 1_000_000 * price_out_1m
+
+    if model not in PRICING and model not in _warned_models:
+        _warned_models.add(model)
+        logger.warning(
+            "Sin precio cargado para modelo=%r — costo se reporta como $0. "
+            "Seteá PRICE_INPUT_PER_1M / PRICE_OUTPUT_PER_1M para estimar costo real.",
+            model,
+        )
     prompt_cost_1k, completion_cost_1k = PRICING.get(model, (0.0, 0.0))
     return prompt_tokens / 1000 * prompt_cost_1k + completion_tokens / 1000 * completion_cost_1k
+
+
+def get_usage_summary():
+    """Totales acumulados de tokens/llamadas desde que se importó el módulo."""
+    return dict(_usage_totals)
+
+
+def print_usage_summary():
+    u = _usage_totals
+    print(
+        f"Uso total: {u['calls']} llamadas, "
+        f"{u['prompt_tokens']} tokens input, {u['completion_tokens']} tokens output"
+    )
+
+
+class DailyQuotaExhausted(RuntimeError):
+    """El backend reportó un tope duro por día (no un throttle transitorio de
+    minuto). Reintentar con el backoff normal no sirve — hay que parar."""
+
+
+# Frases que distinguen un throttle "por día" (no se resuelve reintentando en
+# minutos) de un throttle transitorio de minuto/segundo (sí se resuelve).
+_DAILY_QUOTA_MARKERS = ("tokens per day", "requests per day", "per-day")
+
+
+def _is_daily_quota_error(exception) -> bool:
+    return any(marker in str(exception).lower() for marker in _DAILY_QUOTA_MARKERS)
 
 
 def _retry_delay(attempt, exception):
@@ -57,6 +111,11 @@ def _with_retries(call):
         try:
             return call()
         except Exception as e:
+            if _is_daily_quota_error(e):
+                # No tiene sentido reintentar un tope de 24hs con backoff de
+                # segundos, y seguir haciéndolo termina rellenando el resto
+                # de la corrida con la acción de fallback en silencio.
+                raise DailyQuotaExhausted(str(e)) from e
             if i < MAX_RETRIES - 1:
                 delay = _retry_delay(i, e)
                 logger.debug(
@@ -100,6 +159,9 @@ def _complete_ollama(dialogs, temperature, max_tokens):
             messages=dialogs,
             options={"temperature": temperature, "num_predict": max_tokens},
         )
+        _usage_totals["prompt_tokens"] += response.get("prompt_eval_count", 0)
+        _usage_totals["completion_tokens"] += response.get("eval_count", 0)
+        _usage_totals["calls"] += 1
         return response["message"]["content"], 0.0  # backend local, sin costo
 
     return _with_retries(call)

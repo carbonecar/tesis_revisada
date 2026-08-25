@@ -1,0 +1,120 @@
+%% cuadro_ecuaciones.tex — Comparación de las 6 ecuaciones del DSGE (Galí-Monacelli,
+%% forma reducida) contra su contraparte (explícita, parcial o inferida) en el
+%% sistema de agentes LLM.
+%%
+%% Standalone: compilar este archivo directamente genera un PDF de solo esta tabla
+%% (reutiliza preamble.tex de esta misma carpeta).
+
+\documentclass[12pt, a4paper]{report}
+\input{preamble}
+\begin{document}
+
+\providecommand{\existeSi}[1]{\textcolor{green!45!black}{\textbf{#1}}}
+\providecommand{\existeNo}[1]{\textcolor{red!70!black}{\textbf{#1}}}
+\providecommand{\existeParcial}[1]{\textcolor{orange!80!black}{\textbf{#1}}}
+
+\begingroup
+\small
+\setlength{\LTleft}{0pt}
+\setlength{\LTright}{0pt}
+\begin{longtable}{@{}c p{3.4cm} p{2.3cm} p{2.1cm} p{5.7cm}@{}}
+\caption{Las seis ecuaciones del sistema DSGE (SOE-NK, forma reducida de
+Galí-Monacelli 2005) y su contraparte —explícita, parcial o inferida— en el
+sistema de agentes LLM.}
+\label{tab:cuadro-ecuaciones-dsge-agentes} \\
+\toprule
+\textbf{\#} & \textbf{Ecuación DSGE} & \textbf{Origen real} & \textbf{¿Existe en agentes?} & \textbf{Cómo aparece en agentes} \\
+\midrule
+\endfirsthead
+
+\multicolumn{5}{c}{\tablename\ \thetable\ -- continuación} \\
+\toprule
+\textbf{\#} & \textbf{Ecuación DSGE} & \textbf{Origen real} & \textbf{¿Existe en agentes?} & \textbf{Cómo aparece en agentes} \\
+\midrule
+\endhead
+
+\midrule
+\multicolumn{5}{r}{\textit{Continúa en la página siguiente}} \\
+\endfoot
+
+\bottomrule
+\endlastfoot
+
+1 &
+\textbf{AR(1)} \newline
+$r^{nat}_{t+1} = \rho_{rnat}\, r^{nat}_t + \varepsilon^{rnat}_t$ \newline
+\textit{(demanda externa)}
+&
+Genérico NK, no específico de G\&M
+&
+\existeNo{No existe}
+&
+Ningún agente recibe ni genera una variable de ``tasa natural / demanda externa''. No hay contraparte.
+\\
+\addlinespace
+
+2 &
+\textbf{AR(1)} \newline
+$s_{t+1} = \rho_s\, s_t + \varepsilon^{s}_t$ \newline
+\textit{(cost-push)}
+&
+Genérico NK
+&
+\existeNo{No existe como proceso}
+&
+Las Firmas fijan \texttt{inflacion\_precio} con una heurística de \textit{pass-through} (\texttt{prompts.py:73,84}), pero no hay shock de costos explícito ni persistencia AR(1) --- es una decisión LLM período a período sin memoria estructural.
+\\
+\addlinespace
+
+3 &
+\textbf{AR(1)} \newline
+$\phi_{t+1} = \rho_\phi\, \phi_t + \varepsilon^{\phi}_t$ \newline
+\textit{(prima de riesgo / bimonetario)}
+&
+Adaptación propia (no G\&M)
+&
+\existeParcial{Existe (inferido)}
+&
+No hay shock exógeno. \texttt{brecha\_cambiaria} se actualiza como \texttt{prev}~$\times\,(1 + 0.10\cdot(\lambda_{mean}-0.30))$ (\texttt{simulation.py:172}). Es emergente: depende de cuánto se dolarizan los Hogares (\texttt{lambda\_usd}), decisión libre del LLM, no de un proceso estocástico calibrado.
+\\
+\addlinespace
+
+4 &
+\textbf{Regla de Taylor} \newline
+$i_{t+1} = \rho_i\, i_t + (1-\rho_i)\left[\phi_\pi \pi_t + \phi_y y_t\right]$
+&
+Escudé / ARGEM, no G\&M
+&
+\existeSi{Sí, explícita (1:1)}
+&
+Se le da al Banco Central literalmente la misma fórmula con los mismos coeficientes ($\rho_i=0.80$, $\phi_\pi=1.50$, $\phi_y=0.125$) en su prompt (\texttt{prompts.py:49-53}). Es guía textual, no una restricción de código --- el LLM puede apartarse.
+\\
+\addlinespace
+
+5 &
+\textbf{Curva IS} \newline
+$y_t = E_t y_{t+1} - \dfrac{1}{\sigma}(i_{t-1}-E_t\pi_{t+1}) + r^{nat}_t + \alpha\phi_t$
+&
+G\&M genuino (forma funcional)
+&
+\existeNo{No existe (inferido)}
+&
+\texttt{pbi\_gap} sale de \texttt{avg(produccion\_relativa)~-~1.0} (\texttt{simulation.py:169}). Las Firmas solo reciben la guía cualitativa ``$>1.0$ si demanda alta, $<1.0$ en recesión'' (\texttt{prompts.py:75,86}) --- sin tasa real, sin forward-looking, sin $\sigma$, sin canal de riqueza vía $\phi$. Es la brecha más grande entre ambos modelos.
+\\
+\addlinespace
+
+6 &
+\textbf{NKPC} \newline
+$\pi_t = \beta E_t\pi_{t+1} + \kappa y_t + \alpha\phi_t + s_t$
+&
+G\&M genuino (forma funcional + $\kappa$ Calvo)
+&
+\existeParcial{Parcial}
+&
+Firmas usan reglas ad-hoc de \textit{pass-through}: tradable $\approx 0.7\,\Delta\%TC + 0.3\,\pi_{gral}$; no-tradable $\approx 0.9\,\pi_{gral} + 0.1\,\Delta\%TC$ (\texttt{prompts.py:72-73,83-84}). No hay término forward-looking $\beta E_t\pi_{t+1}$, no hay $\kappa$ (pendiente Calvo), no hay $y_t$ como insumo explícito.
+\\
+
+\end{longtable}
+\endgroup
+
+\end{document}

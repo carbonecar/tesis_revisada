@@ -1,0 +1,31 @@
+# config.yaml.example — copiar a config.yaml y ajustar providers/modelos
+# Si config.yaml no existe, se usa DEFAULT_CONFIG (anthropic directo + openai directo)
+
+banco_central:
+  provider: anthropic          # "anthropic" | "bedrock_anthropic"
+  model: claude-sonnet-4-6
+  # aws_region: us-east-1     # solo para bedrock_anthropic
+  # aws_profile: my-profile   # opcional: perfil AWS named
+
+firma:
+  provider: anthropic          # "anthropic" | "bedrock_anthropic"
+  model: claude-haiku-4-5
+
+hogar:
+  provider: openai             # "openai" | "bedrock_openai"
+  model: gpt-4o-mini
+  # model: gpt-oss-20b        # alternativa via Bedrock
+
+# ── Ejemplo configuración todo-Bedrock ──────────────────────────────────────
+# banco_central:
+#   provider: bedrock_anthropic
+#   model: us.anthropic.claude-sonnet-4-6-20251101-v1:0
+#   aws_region: us-east-1
+# firma:
+#   provider: bedrock_anthropic
+#   model: us.anthropic.claude-haiku-4-5-20251001-v1:0
+#   aws_region: us-east-1
+# hogar:
+#   provider: bedrock_openai
+#   model: gpt-oss-20b
+#   aws_region: us-east-1

@@ -8,7 +8,12 @@ import re
 import os
 import scipy
 
-from llm_providers import get_completion, get_multiple_completion  # noqa: F401
+from llm_providers import (  # noqa: F401
+    DailyQuotaExhausted,
+    get_completion,
+    get_multiple_completion,
+    print_usage_summary,
+)
 
 save_path = './'
 

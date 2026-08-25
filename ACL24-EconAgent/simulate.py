@@ -98,7 +98,7 @@ def gpt_actions(env, obs, dialog_queue, dialog4ref_queue, gpt_path, gpt_error, t
                         {problem_prompt} {job_prompt} {consumption_prompt} {tax_prompt} {price_prompt}
                         Your current savings account balance is ${wealth:.2f}. Interest rates, as set by your bank, stand at {interest_rate*100:.2f}%. 
                         With all these factors in play, and considering aspects like your living costs, any future aspirations, and the broader economic trends, how is your willingness to work this month? Furthermore, how would you plan your expenditures on essential goods, keeping in mind good price?
-                        Please share your decisions in a JSON format. The format should have two keys: 'work' (a value between 0 and 1 with intervals of 0.02, indicating the willingness or propensity to work) and 'consumption' (a value between 0 and 1 with intervals of 0.02, indicating the proportion of all your savings and income you intend to spend on essential goods).
+                        Respond with only a JSON object, with no explanation, reasoning, or other text before or after it. The format should have two keys: 'work' (a value between 0 and 1 with intervals of 0.02, indicating the willingness or propensity to work) and 'consumption' (a value between 0 and 1 with intervals of 0.02, indicating the proportion of all your savings and income you intend to spend on essential goods).
                     '''
         obs_prompt = prettify_document(obs_prompt)
         dialog_queue[idx].append({'role': 'user', 'content': obs_prompt})
@@ -110,10 +110,10 @@ def gpt_actions(env, obs, dialog_queue, dialog4ref_queue, gpt_path, gpt_error, t
         else:
             return (actions[0] >= 0) & (actions[0] <= 1) & (actions[1] >= 0) & (actions[1] <= 1)
     if env.world.timestep%3 == 0 and env.world.timestep > 0:
-        results, cost = get_multiple_completion([list(dialogs)[:2] + list(dialog4ref)[-3:-1] + list(dialogs)[-1:] for dialogs, dialog4ref in zip(dialog_queue, dialog4ref_queue)], num_cpus=10, max_tokens=300)
+        results, cost = get_multiple_completion([list(dialogs)[:2] + list(dialog4ref)[-3:-1] + list(dialogs)[-1:] for dialogs, dialog4ref in zip(dialog_queue, dialog4ref_queue)], num_cpus=10, max_tokens=500)
         total_cost += cost
     else:
-        results, cost = get_multiple_completion([list(dialogs) for dialogs in dialog_queue], num_cpus=8, max_tokens=300)
+        results, cost = get_multiple_completion([list(dialogs) for dialogs in dialog_queue], num_cpus=8, max_tokens=500)
         total_cost += cost
     actions = {}
     for idx in range(env.num_agents):
@@ -208,7 +208,12 @@ def complex_actions(env, obs, beta=0.1, gamma=0.1, h=1):
     return actions
     
 
-def main(policy_model='gpt', num_agents=100, episode_length=240, dialog_len=3, beta=0.1, gamma=0.1, h=1, max_price_inflation=0.1, max_wage_inflation=0.05):
+def main(policy_model='gpt', num_agents=100, episode_length=240, dialog_len=3, beta=0.1, gamma=0.1, h=1,
+         max_price_inflation=0.1, max_wage_inflation=0.05, resume_from=None, resume_dir=None):
+    """resume_from: mes (checkpoint, múltiplo de 6) desde el que retomar en vez de arrancar de cero.
+    resume_dir: carpeta de datos de donde leer ese checkpoint (por defecto, la carpeta de esta
+    misma corrida — útil cuando resume_from viene de una corrida más corta, ej. reanudar el
+    checkpoint de una corrida de 120 meses para extenderla a 240)."""
     env_config['n_agents'] = num_agents
     env_config['episode_length'] = episode_length
     if policy_model == 'gpt':
@@ -220,7 +225,7 @@ def main(policy_model='gpt', num_agents=100, episode_length=240, dialog_len=3, b
         env_config['components'][3]['SimpleSaving']['scale_obs'] = False
         env_config['components'][2]['SimpleConsumption']['max_price_inflation'] = max_price_inflation
         env_config['components'][2]['SimpleConsumption']['max_wage_inflation'] = max_wage_inflation
-        
+
         gpt_error = 0
         from collections import deque
         dialog_queue = [deque(maxlen=dialog_len) for _ in range(env_config['n_agents'])]
@@ -231,28 +236,56 @@ def main(policy_model='gpt', num_agents=100, episode_length=240, dialog_len=3, b
         env_config['components'][2]['SimpleConsumption']['max_wage_inflation'] = max_wage_inflation
 
     t = time()
-    env = foundation.make_env_instance(**env_config)
-    obs = env.reset()
     actions = {}
     if policy_model == 'complex':
         policy_model_save = f'{policy_model}-{beta}-{gamma}-{h}-{max_price_inflation}-{max_wage_inflation}'
     if policy_model == 'gpt':
         policy_model_save = f'{policy_model}-{dialog_len}-noperception-reflection-1'
     policy_model_save = f'{policy_model_save}-{num_agents}agents-{episode_length}months'
-    if not os.path.exists(f'{save_path}data/{policy_model_save}'):
-        os.makedirs(f'{save_path}data/{policy_model_save}')
+    data_dir = f'{save_path}data/{policy_model_save}'
+    if not os.path.exists(data_dir):
+        os.makedirs(data_dir)
     if not os.path.exists(f'{save_path}figs/{policy_model_save}'):
         os.makedirs(f'{save_path}figs/{policy_model_save}')
-    for epi in range(env.episode_length):
+
+    if resume_from:
+        src_dir = resume_dir or data_dir
+        print(f'Retomando desde el mes {resume_from} (checkpoint en {src_dir})')
+        with open(f'{src_dir}/env_{resume_from}.pkl', 'rb') as f:
+            env = pkl.load(f)
+        env._episode_length = episode_length  # por si el target es mayor al de la corrida original
+        with open(f'{src_dir}/obs_{resume_from}.pkl', 'rb') as f:
+            obs = pkl.load(f)
         if policy_model == 'gpt':
-            actions, gpt_error, total_cost = gpt_actions(env, obs, dialog_queue, dialog4ref_queue, f'{save_path}data/{policy_model_save}/dialogs', gpt_error, total_cost)
+            with open(f'{src_dir}/dialog_{resume_from}.pkl', 'rb') as f:
+                dialog_queue = pkl.load(f)
+            with open(f'{src_dir}/dialog4ref_{resume_from}.pkl', 'rb') as f:
+                dialog4ref_queue = pkl.load(f)
+        start_epi = resume_from
+    else:
+        env = foundation.make_env_instance(**env_config)
+        obs = env.reset()
+        start_epi = 0
+
+    for epi in range(start_epi, episode_length):
+        if policy_model == 'gpt':
+            try:
+                actions, gpt_error, total_cost = gpt_actions(env, obs, dialog_queue, dialog4ref_queue, f'{data_dir}/dialogs', gpt_error, total_cost)
+            except DailyQuotaExhausted as e:
+                last_ckpt = (epi // 6) * 6
+                print(f'\n[CUPO DIARIO AGOTADO] {e}')
+                print(f'Corte limpio en el mes {epi} — sin decisiones de relleno agregadas al log.')
+                print(f'Último checkpoint completo disponible: mes {last_ckpt} (en {data_dir}).')
+                print(f'Para retomar más tarde: main(..., episode_length={episode_length}, resume_from={last_ckpt}, resume_dir="{data_dir}")')
+                return
         elif policy_model == 'complex':
             actions = complex_actions(env, obs, beta=beta, gamma=gamma, h=h)
         obs, rew, done, info = env.step(actions)
         if (epi+1) % 3 == 0:
             print(f'step {epi+1} done, cost {time()-t:.1f}s')
             if policy_model == 'gpt':
-                print(f'#errors: {gpt_error}, cost ${total_cost:.1f} so far')
+                print(f'#errors: {gpt_error}, cost ${total_cost:.2f} so far')
+                print_usage_summary()
             t = time()
         if (epi+1) % 6 == 0 or epi+1 == env.episode_length:
             with open(f'{save_path}data/{policy_model_save}/actions_{epi+1}.pkl', 'wb') as f:
@@ -274,6 +307,8 @@ def main(policy_model='gpt', num_agents=100, episode_length=240, dialog_len=3, b
         
     if policy_model == 'gpt':
         print(f'#gpt errors: {gpt_error}')
+        print(f'cost total: ${total_cost:.2f}')
+        print_usage_summary()
 
 if __name__ == "__main__":
     fire.Fire(main)
