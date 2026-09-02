@@ -4,6 +4,7 @@
 import logging
 import multiprocessing
 import os
+import re
 from functools import partial
 from time import sleep
 
@@ -66,6 +67,22 @@ def _cost(model, prompt_tokens, completion_tokens):
 def get_usage_summary():
     """Totales acumulados de tokens/llamadas desde que se importó el módulo."""
     return dict(_usage_totals)
+
+
+def current_model_tag():
+    """Identificador de backend+modelo para usar en nombres de carpeta/archivo,
+    así corridas con distintos modelos no se pisan entre sí (ver policy_model_save
+    en simulate.py)."""
+    if ECON_BACKEND == "openai":
+        model = os.getenv("OPENAI_MODEL", os.getenv("MODEL", "gpt-4o-mini"))
+    elif ECON_BACKEND == "ollama":
+        model = os.getenv("OLLAMA_MODEL", "llama3.1")
+    elif ECON_BACKEND == "bedrock":
+        model = os.getenv("BEDROCK_MODEL_ID", "anthropic.claude-3-5-sonnet-20240620-v1:0")
+    else:
+        model = "unknown"
+    tag = f"{ECON_BACKEND}-{model}"
+    return re.sub(r"[^A-Za-z0-9_.-]+", "-", tag)
 
 
 def print_usage_summary():

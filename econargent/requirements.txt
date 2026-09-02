@@ -1,0 +1,12 @@
+autogen-agentchat
+autogen-ext[openai,ollama,semantic-kernel-aws]
+fire
+lz4
+matplotlib
+numpy
+pandas
+python-dateutil
+python-dotenv
+pyyaml
+scipy
+seaborn

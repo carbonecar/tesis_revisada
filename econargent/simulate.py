@@ -1,3 +1,6 @@
+"""Simulación EconAgent (fork de ACL24-EconAgent) con las decisiones de los
+agentes generadas vía el framework AutoGen (autogen_providers.py), en lugar de
+llamar directo a los SDKs de OpenAI/ollama/boto3."""
 from typing import Optional
 import argparse
 import fire

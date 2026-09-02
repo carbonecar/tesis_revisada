@@ -1,0 +1,53 @@
+classDiagram
+    class autogen_providers {
+        <<module>>
+        +ECON_BACKEND: str
+        +get_completion(dialogs, temperature, max_tokens) tuple
+        +get_multiple_completion(dialogs, num_cpus, temperature, max_tokens) tuple
+        +get_usage_summary() dict
+        +print_usage_summary() void
+        +current_model_tag() str
+        -_complete(dialogs, temperature, max_tokens) tuple
+        -_acomplete(client, dialogs, temperature, max_tokens) tuple
+        -_with_retries(call) tuple
+        -_cost(model, prompt_tokens, completion_tokens) float
+        -_to_autogen_messages(dialogs) list
+        -_build_openai_client() tuple
+        -_build_ollama_client() tuple
+        -_build_bedrock_client() tuple
+    }
+
+    class DailyQuotaExhausted {
+        <<exception>>
+    }
+    RuntimeError <|-- DailyQuotaExhausted
+
+    class ChatCompletionClient {
+        <<interface, ABC>>
+        +create(messages, extra_create_args) CreateResult
+        +close() void
+    }
+
+    class OpenAIChatCompletionClient
+    class OllamaChatCompletionClient
+    class SKChatCompletionAdapter {
+        -sk_client: BedrockChatCompletion
+    }
+    class BedrockChatCompletion {
+        <<semantic_kernel>>
+    }
+
+    ChatCompletionClient <|.. OpenAIChatCompletionClient
+    ChatCompletionClient <|.. OllamaChatCompletionClient
+    ChatCompletionClient <|.. SKChatCompletionAdapter
+    SKChatCompletionAdapter o-- BedrockChatCompletion : envuelve
+
+    class SystemMessage
+    class UserMessage
+    class AssistantMessage
+
+    autogen_providers ..> ChatCompletionClient : crea según ECON_BACKEND
+    autogen_providers ..> SystemMessage : construye
+    autogen_providers ..> UserMessage : construye
+    autogen_providers ..> AssistantMessage : construye
+    autogen_providers ..> DailyQuotaExhausted : lanza (cupo diario agotado)
