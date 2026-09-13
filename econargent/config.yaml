@@ -1,0 +1,47 @@
+env:
+  agent_reward_type: isoelastic_coin_minus_labor
+  components:
+  - SimpleLabor:
+      mask_first_step: false
+      pareto_param: 8
+      payment_max_skill_multiplier: 950
+      labor_step: 168
+      num_labor_hours: 168
+      scale_obs: true
+  - PeriodicBracketTax:
+      bracket_spacing: us-federal
+      disable_taxes: false
+      period: 1
+      tax_model: us-federal-single-filer-2018-scaled
+      usd_scaling: 12
+      scale_obs: true
+  - SimpleConsumption:
+      mask_first_step: false
+      consumption_rate_step: 0.02
+      max_price_inflation: 0.1
+      max_wage_inflation: 0.05
+  - SimpleSaving:
+      mask_first_step: false
+      scale_obs: true
+      saving_rate: 0.00
+  enable_skill_change: true
+  enable_price_change: true
+  dense_log_frequency: 1
+  labor_cost: 1
+  episode_length: 240
+  period: 12
+  flatten_masks: true
+  flatten_observations: true
+  isoelastic_etas: [0.5, 0.5]
+  labor_exponent: 2
+  skill_change: 0.02
+  price_change: 0.02
+  mixing_weight_gini_vs_coin: 0
+  multi_action_mode_agents: true
+  multi_action_mode_planner: true
+  n_agents: 100
+  planner_reward_type: inv_income_weighted_utility
+  scenario_name: one-step-economy
+  world_size:
+  - 1
+  - 1

@@ -1,3 +1,22 @@
+# econargent
+
+Fork de `ACL24-EconAgent` (ver `../ACL24-EconAgent`) donde la capa de llamadas a LLM
+(`llm_providers.py`) fue reescrita como `autogen_providers.py`, usando el framework
+**AutoGen** de Microsoft (`autogen-core` / `autogen-agentchat` / `autogen-ext`) en vez de
+llamar directo a los SDKs de `openai`, `ollama` y `boto3`. El motor de simulación económica
+(`ai_economist/`, `simulate.py`, `config.yaml`) es el mismo; sólo cambia cómo se obtienen
+las decisiones de trabajo/consumo de cada agente.
+
+Los tres backends (`ECON_BACKEND=openai|ollama|bedrock`) pasan ahora por
+`autogen_core.models.ChatCompletionClient`:
+- `openai` → `autogen_ext.models.openai.OpenAIChatCompletionClient`
+- `ollama` → `autogen_ext.models.ollama.OllamaChatCompletionClient`
+- `bedrock` → `autogen_ext.models.semantic_kernel.SKChatCompletionAdapter` envolviendo el
+  conector de Bedrock de Semantic Kernel (AutoGen no trae cliente nativo de Bedrock; éste
+  es el puente soportado, instalado vía el extra `autogen-ext[semantic-kernel-aws]`)
+
+---
+
 # EconAgent: Large Language Model-Empowered Agents for Simulating Macroeconomic Activities
 Official implementation of this ACL 2024 paper.
 

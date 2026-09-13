@@ -1,0 +1,313 @@
+"""Adaptadores de LLM para simulate.py, implementados sobre el framework AutoGen
+(paquetes autogen-core / autogen-ext de Microsoft) en lugar de llamar directo a
+los SDKs de OpenAI/ollama/boto3. El backend se elige con ECON_BACKEND
+(openai | ollama | bedrock); las tres rutas pasan por autogen_core.models.ChatCompletionClient,
+y exponen la misma firma de get_completion/get_multiple_completion que tenía
+llm_providers.py en ACL24-EconAgent, para que simulate.py no necesite cambios.
+"""
+import asyncio
+import logging
+import multiprocessing
+import os
+import re
+from functools import partial
+from time import sleep
+
+from dotenv import load_dotenv
+
+from autogen_core.models import (
+    AssistantMessage,
+    ModelFamily,
+    SystemMessage,
+    UserMessage,
+)
+
+load_dotenv()
+
+logging.basicConfig(
+    level=os.getenv("LOG_LEVEL", "INFO"),
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+logger = logging.getLogger(__name__)
+
+# autogen_core emite un evento JSON (historial completo + respuesta) por cada
+# llamada al modelo bajo este logger. Es puro ruido acá: simulate.py ya guarda
+# el diálogo de cada agente en texto plano en {data_dir}/dialogs/{nombre}.
+logging.getLogger("autogen_core.events").setLevel(logging.WARNING)
+
+ECON_BACKEND = os.getenv("ECON_BACKEND", "openai").lower()
+MAX_RETRIES = 20
+RETRY_DELAY_SECONDS = 6
+MAX_RETRY_DELAY_SECONDS = 60
+
+# Precio por 1k tokens (prompt, completion). Modelos ausentes -> costo 0
+# a menos que PRICE_INPUT_PER_1M / PRICE_OUTPUT_PER_1M estén seteadas (ver _cost).
+# AutoGen sólo trae tabla de precios propia para OpenAI puro, así que seguimos
+# calculando el costo nosotros mismos a partir del usage (tokens) que devuelve
+# ChatCompletionClient.create(), igual que hacía llm_providers.py.
+PRICING = {
+    "gpt-4o-mini": (0.00015, 0.0006),
+    "gpt-3.5-turbo-0613": (0.001, 0.002),
+    "gpt-4o": (0.0025, 0.01),
+    "us.anthropic.claude-sonnet-4-6": (0.003, 0.015),
+}
+
+# Override manual de precio (USD por 1M tokens), útil para Bedrock u otros
+# modelos ausentes de PRICING. Si están seteadas, tienen prioridad sobre PRICING.
+_PRICE_INPUT_PER_1M = os.getenv("PRICE_INPUT_PER_1M")
+_PRICE_OUTPUT_PER_1M = os.getenv("PRICE_OUTPUT_PER_1M")
+
+_warned_models: set[str] = set()
+
+# Acumuladores globales de uso real (tokens), visibles vía get_usage_summary().
+_usage_totals = {"prompt_tokens": 0, "completion_tokens": 0, "calls": 0}
+
+
+def _cost(model, prompt_tokens, completion_tokens):
+    _usage_totals["prompt_tokens"] += prompt_tokens
+    _usage_totals["completion_tokens"] += completion_tokens
+    _usage_totals["calls"] += 1
+
+    if _PRICE_INPUT_PER_1M is not None and _PRICE_OUTPUT_PER_1M is not None:
+        price_in_1m = float(_PRICE_INPUT_PER_1M)
+        price_out_1m = float(_PRICE_OUTPUT_PER_1M)
+        return prompt_tokens / 1_000_000 * price_in_1m + completion_tokens / 1_000_000 * price_out_1m
+
+    if model not in PRICING and model not in _warned_models:
+        _warned_models.add(model)
+        logger.warning(
+            "Sin precio cargado para modelo=%r — costo se reporta como $0. "
+            "Seteá PRICE_INPUT_PER_1M / PRICE_OUTPUT_PER_1M para estimar costo real.",
+            model,
+        )
+    prompt_cost_1k, completion_cost_1k = PRICING.get(model, (0.0, 0.0))
+    return prompt_tokens / 1000 * prompt_cost_1k + completion_tokens / 1000 * completion_cost_1k
+
+
+def get_usage_summary():
+    """Totales acumulados de tokens/llamadas desde que se importó el módulo."""
+    return dict(_usage_totals)
+
+
+def current_model_tag():
+    """Identificador de backend+modelo para usar en nombres de carpeta/archivo,
+    así corridas con distintos modelos no se pisan entre sí (ver policy_model_save
+    en simulate.py). Prefijo 'autogen-' para no pisarse con corridas hechas con
+    la versión ACL24-EconAgent original (llm_providers.py sin AutoGen)."""
+    if ECON_BACKEND == "openai":
+        model = os.getenv("OPENAI_MODEL", os.getenv("MODEL", "gpt-4o-mini"))
+    elif ECON_BACKEND == "ollama":
+        model = os.getenv("OLLAMA_MODEL", "llama3.1")
+    elif ECON_BACKEND == "bedrock":
+        model = os.getenv("BEDROCK_MODEL_ID", "anthropic.claude-3-5-sonnet-20240620-v1:0")
+    else:
+        model = "unknown"
+    tag = f"autogen-{ECON_BACKEND}-{model}"
+    return re.sub(r"[^A-Za-z0-9_.-]+", "-", tag)
+
+
+def print_usage_summary():
+    u = _usage_totals
+    print(
+        f"Uso total: {u['calls']} llamadas, "
+        f"{u['prompt_tokens']} tokens input, {u['completion_tokens']} tokens output"
+    )
+
+
+class DailyQuotaExhausted(RuntimeError):
+    """El backend reportó un tope duro por día (no un throttle transitorio de
+    minuto). Reintentar con el backoff normal no sirve — hay que parar."""
+
+
+# Frases que distinguen un throttle "por día" (no se resuelve reintentando en
+# minutos) de un throttle transitorio de minuto/segundo (sí se resuelve).
+_DAILY_QUOTA_MARKERS = ("tokens per day", "requests per day", "per-day")
+
+
+def _is_daily_quota_error(exception) -> bool:
+    return any(marker in str(exception).lower() for marker in _DAILY_QUOTA_MARKERS)
+
+
+def _retry_delay(attempt, exception):
+    # Los SDK que AutoGen usa por debajo (openai para los backends openai/bedrock-openai
+    # compat, ollama para el backend nativo) exponen la respuesta HTTP en .response; si el
+    # servidor nos dice cuánto esperar (429 con Retry-After), lo respetamos.
+    response = getattr(exception, "response", None)
+    if response is not None:
+        retry_after = getattr(response, "headers", {}).get("retry-after")
+        if retry_after:
+            try:
+                return float(retry_after)
+            except ValueError:
+                pass
+        if getattr(response, "status_code", None) == 429:
+            return min(RETRY_DELAY_SECONDS * (2 ** attempt), MAX_RETRY_DELAY_SECONDS)
+    return RETRY_DELAY_SECONDS
+
+
+def _with_retries(call):
+    for i in range(MAX_RETRIES):
+        try:
+            return call()
+        except Exception as e:
+            if _is_daily_quota_error(e):
+                # No tiene sentido reintentar un tope de 24hs con backoff de
+                # segundos, y seguir haciéndolo termina rellenando el resto
+                # de la corrida con la acción de fallback en silencio.
+                raise DailyQuotaExhausted(str(e)) from e
+            if i < MAX_RETRIES - 1:
+                delay = _retry_delay(i, e)
+                logger.debug(
+                    "Retry %d/%d after %s: %s (esperando %.1fs)",
+                    i + 1, MAX_RETRIES, type(e).__name__, e, delay,
+                )
+                sleep(delay)
+            else:
+                logger.warning("Gave up after %d retries: %s: %s", MAX_RETRIES, type(e).__name__, e)
+                return "Error", 0.0
+
+
+def _unknown_model_info():
+    # Modelo "genérico" para el ModelInfo que exige AutoGen cuando el nombre de
+    # modelo no está en su tabla interna (todo lo que no sea un modelo OpenAI
+    # de catálogo): no necesitamos capacidades de tools/vision acá, sólo texto.
+    return {
+        "vision": False,
+        "function_calling": False,
+        "json_output": False,
+        "family": ModelFamily.UNKNOWN,
+        "structured_output": False,
+    }
+
+
+def _build_openai_client():
+    from autogen_ext.models.openai import OpenAIChatCompletionClient
+
+    model = os.getenv("OPENAI_MODEL", os.getenv("MODEL", "gpt-4o-mini"))
+    client = OpenAIChatCompletionClient(model=model, api_key=os.getenv("OPENAI_API_KEY"))
+    return model, client
+
+
+def _build_ollama_client():
+    from autogen_ext.models.ollama import OllamaChatCompletionClient
+
+    model = os.getenv("OLLAMA_MODEL", "llama3.1")
+    client = OllamaChatCompletionClient(
+        model=model,
+        host=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
+        model_info=_unknown_model_info(),
+    )
+    return model, client
+
+
+def _build_bedrock_client():
+    # AutoGen (autogen-ext) no trae un cliente nativo de Bedrock; el camino
+    # soportado es el adaptador de Semantic Kernel (extra "semantic-kernel-aws"),
+    # que envuelve el conector de Bedrock de Semantic Kernel para que hable el
+    # protocolo ChatCompletionClient de AutoGen.
+    import boto3
+    from autogen_ext.models.semantic_kernel import SKChatCompletionAdapter
+    from semantic_kernel import Kernel
+    from semantic_kernel.connectors.ai.bedrock import BedrockChatCompletion
+    from semantic_kernel.connectors.ai.bedrock.services.model_provider.bedrock_model_provider import (
+        BedrockModelProvider,
+    )
+
+    model_id = os.getenv("BEDROCK_MODEL_ID", "anthropic.claude-3-5-sonnet-20240620-v1:0")
+    # El model_id de Bedrock trae el proveedor como prefijo (p. ej.
+    # "anthropic.claude-..." o "amazon.nova-lite-..."); lo mapeamos al enum que
+    # pide el conector de Semantic Kernel en vez de asumir un único proveedor.
+    _PROVIDER_PREFIXES = {
+        "anthropic": BedrockModelProvider.ANTHROPIC,
+        "amazon": BedrockModelProvider.AMAZON,
+        "meta": BedrockModelProvider.META,
+        "mistral": BedrockModelProvider.MISTRALAI,
+        "cohere": BedrockModelProvider.COHERE,
+        "ai21": BedrockModelProvider.AI21LABS,
+    }
+    provider_prefix = model_id.split(".", 1)[0].split(":", 1)[0]
+    try:
+        model_provider = _PROVIDER_PREFIXES[provider_prefix]
+    except KeyError:
+        raise ValueError(
+            f"No sé mapear el proveedor Bedrock de BEDROCK_MODEL_ID={model_id!r} "
+            f"(prefijo {provider_prefix!r}). Proveedores soportados: {list(_PROVIDER_PREFIXES)}"
+        )
+    runtime_client = boto3.client("bedrock-runtime", region_name=os.getenv("AWS_REGION", "us-east-1"))
+    sk_client = BedrockChatCompletion(
+        model_id=model_id,
+        model_provider=model_provider,
+        runtime_client=runtime_client,
+    )
+    client = SKChatCompletionAdapter(
+        sk_client,
+        kernel=Kernel(),  # el adaptador exige un Kernel de Semantic Kernel aunque no usemos plugins/memoria
+        model_info=_unknown_model_info(),
+    )
+    return model_id, client
+
+
+_CLIENT_BUILDERS = {
+    "openai": _build_openai_client,
+    "ollama": _build_ollama_client,
+    "bedrock": _build_bedrock_client,
+}
+
+
+def _to_autogen_messages(dialogs):
+    messages = []
+    for m in dialogs:
+        role, content = m["role"], m["content"]
+        if role == "system":
+            messages.append(SystemMessage(content=content))
+        elif role == "assistant":
+            messages.append(AssistantMessage(content=content, source="assistant"))
+        else:
+            messages.append(UserMessage(content=content, source="user"))
+    return messages
+
+
+async def _acomplete(client, dialogs, temperature, max_tokens):
+    messages = _to_autogen_messages(dialogs)
+    try:
+        result = await client.create(
+            messages,
+            extra_create_args={"temperature": temperature, "max_tokens": max_tokens},
+        )
+        return result.content, result.usage.prompt_tokens, result.usage.completion_tokens
+    finally:
+        await client.close()
+
+
+def _complete(dialogs, temperature, max_tokens):
+    try:
+        build_client = _CLIENT_BUILDERS[ECON_BACKEND]
+    except KeyError:
+        raise ValueError(
+            f"ECON_BACKEND='{ECON_BACKEND}' desconocido. Opciones: {list(_CLIENT_BUILDERS)}"
+        )
+    model, client = build_client()
+
+    def call():
+        content, prompt_tokens, completion_tokens = asyncio.run(
+            _acomplete(client, dialogs, temperature, max_tokens)
+        )
+        cost = _cost(model, prompt_tokens, completion_tokens)
+        return content, cost
+
+    return _with_retries(call)
+
+
+def get_completion(dialogs, temperature=0, max_tokens=100):
+    logger.debug("-> [%s] dialogs=%r", ECON_BACKEND, dialogs)
+    response, cost = _complete(dialogs, temperature, max_tokens)
+    logger.debug("<- [%s] cost=%.5f response=%r", ECON_BACKEND, cost, response)
+    return response, cost
+
+
+def get_multiple_completion(dialogs, num_cpus=15, temperature=0, max_tokens=100):
+    get_completion_partial = partial(get_completion, temperature=temperature, max_tokens=max_tokens)
+    with multiprocessing.Pool(processes=num_cpus) as pool:
+        results = pool.map(get_completion_partial, dialogs)
+    total_cost = sum(cost for _, cost in results)
+    return [response for response, _ in results], total_cost

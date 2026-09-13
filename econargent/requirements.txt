@@ -1,10 +1,9 @@
-boto3
+autogen-agentchat
+autogen-ext[openai,ollama,semantic-kernel-aws]
 fire
 lz4
 matplotlib
 numpy
-ollama
-openai
 pandas
 python-dateutil
 python-dotenv

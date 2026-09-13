@@ -8,7 +8,7 @@ import re
 import os
 import scipy
 
-from llm_providers import (  # noqa: F401
+from autogen_providers import (  # noqa: F401
     DailyQuotaExhausted,
     current_model_tag,
     get_completion,

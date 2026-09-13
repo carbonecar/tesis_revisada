@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<style>
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background-color: #0f172a;
+    color: #f8fafc;
+    padding: 30px;
+    display: flex;
+    justify-content: center;
+  }
+  .table-container {
+    max-width: 1100px;
+    background: #1e293b;
+    border-radius: 12px;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+    overflow: hidden;
+    border: 1px solid #334155;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    text-align: left;
+    font-size: 14px;
+  }
+  th {
+    background-color: #0f172a;
+    color: #38bdf8;
+    text-transform: uppercase;
+    font-size: 12px;
+    letter-spacing: 0.05em;
+    padding: 16px;
+    border-bottom: 2px solid #334155;
+  }
+  td {
+    padding: 16px;
+    border-bottom: 1px solid #334155;
+    vertical-align: top;
+    line-height: 1.5;
+  }
+  tr:hover {
+    background-color: #26334d;
+  }
+  .eq {
+    font-family: "Courier New", Courier, monospace;
+    color: #f43f5e;
+    font-weight: bold;
+  }
+  .badge-no {
+    color: #ef4444;
+    font-weight: bold;
+  }
+  .badge-yes {
+    color: #10b981;
+    font-weight: bold;
+  }
+  .badge-partial {
+    color: #f59e0b;
+    font-weight: bold;
+  }
+  code {
+    background: #0f172a;
+    color: #38bdf8;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 12px;
+  }
+</style>
+</head>
+<body>
+
+<div class="table-container">
+  <table>
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Ecuación DSGE</th>
+        <th>Origen real</th>
+        <th>¿Existe en agentes?</th>
+        <th>Cómo aparece en agentes</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>1</strong></td>
+        <td><strong>AR(1)</strong><br><span class="eq">r<sup>nat</sup><sub>t+1</sub> = ρ<sub>rnat</sub> r<sup>nat</sup><sub>t</sub> + ε<sup>rnat</sup><sub>t</sub></span><br><i>(demanda externa)</i></td>
+        <td>Genérico NK, no específico de G&M</td>
+        <td><span class="badge-no">No existe</span></td>
+        <td>Ningún agente recibe ni genera una variable de "tasa natural / demanda externa". No hay contraparte.</td>
+      </tr>
+      <tr>
+        <td><strong>2</strong></td>
+        <td><strong>AR(1)</strong><br><span class="eq">s<sub>t+1</sub> = ρ<sub>s</sub> s<sub>t</sub> + ε<sup>s</sup><sub>t</sub></span><br><i>(cost-push)</i></td>
+        <td>Genérico NK</td>
+        <td><span class="badge-no">No existe como proceso</span></td>
+        <td>Las firmas fijan <code>inflacion_precio</code> con una heurística de <i>pass-through</i> (<code>prompts.py:73,84</code>), pero no hay shock de costos explícito ni persistencia AR(1) — es una decisión LLM período a período sin memoria estructural.</td>
+      </tr>
+      <tr>
+        <td><strong>3</strong></td>
+        <td><strong>AR(1)</strong><br><span class="eq">ϕ<sub>t+1</sub> = ρ<sub>ϕ</sub> ϕ<sub>t</sub> + ε<sup>ϕ</sup><sub>t</sub></span><br><i>(prima de riesgo / bimonetario)</i></td>
+        <td>Adaptación propia (no G&M)</td>
+        <td><span class="badge-partial">Existe (inferido)</span></td>
+        <td>No hay shock exógeno. <code>brecha_cambiaria</code> se actualiza como:<br><code>prev × (1 + 0.10 · (λ_mean − 0.30))</code> (<code>simulation.py:172</code>). Es emergente: depende de cuánto se dolarizan los Hogares (<code>lambda_usd</code>), decisión libre del LLM, no de un proceso estocástico calibrado.</td>
+      </tr>
+      <tr>
+        <td><strong>4</strong></td>
+        <td><strong>Regla de Taylor</strong><br><span class="eq">i<sub>t+1</sub> = ρ<sub>i</sub> i<sub>t</sub> + (1 - ρ<sub>i</sub>)[ϕ<sub>π</sub> π<sub>t</sub> + ϕ<sub>y</sub> y<sub>t</sub>]</span></td>
+        <td>Escudé / ARGEM, no G&M</td>
+        <td><span class="badge-yes">Sí, explícita (1:1)</span></td>
+        <td>Se le da al Banco Central literalmente la misma fórmula con los mismos coeficientes (ρ<sub>i</sub>=0.80, ϕ<sub>π</sub>=1.50, ϕ<sub>y</sub>=0.125) en su prompt (<code>prompts.py:49-53</code>). Es guía textual, no una restricción de código — el LLM puede apartarse.</td>
+      </tr>
+      <tr>
+        <td><strong>5</strong></td>
+        <td><strong>Curva IS</strong><br><span class="eq">y<sub>t</sub> = E<sub>t</sub> y<sub>t+1</sub> - (1/σ)(i<sub>t-1</sub> - E<sub>t</sub>π<sub>t+1</sub>) + r<sup>nat</sup><sub>t</sub> + αϕ<sub>t</sub></span></td>
+        <td>G&M genuino (forma funcional)</td>
+        <td><span class="badge-no">No existe (inferido)</span></td>
+        <td><code>pbi_gap</code> sale de <code>avg(produccion_relativa) - 1.0</code> (<code>simulation.py:169</code>). Las Firmas solo reciben la guía cualitativa <code>">1.0 si demanda alta, <1.0 en recesión"</code> (<code>prompts.py:75,86</code>) — sin tasa real, sin forward-looking, sin σ, sin canal de riqueza vía ϕ. Es la brecha más grande entre ambos modelos.</td>
+      </tr>
+      <tr>
+        <td><strong>6</strong></td>
+        <td><strong>NKPC</strong><br><span class="eq">π<sub>t</sub> = β E<sub>t</sub>π<sub>t+1</sub> + κ y<sub>t</sub> + αϕ<sub>t</sub> + s<sub>t</sub></span></td>
+        <td>G&M genuino (forma funcional + κ Calvo)</td>
+        <td><span class="badge-partial">Parcial</span></td>
+        <td>Firmas usan reglas ad-hoc de <i>pass-through</i>:<br>• <i>Tradable:</i> ≈ 0.7 Δ%TC + 0.3 π<sub>gral</sub><br>• <i>No-tradable:</i> ≈ 0.9 π<sub>gral</sub> + 0.1 Δ%TC<br>(<code>prompts.py:72-73,83-84</code>). No hay término forward-looking β E<sub>t</sub>π<sub>t+1</sub>, no hay κ (pendiente Calvo), no hay y<sub>t</sub> como insumo explícito.</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+</body>
+</html>
