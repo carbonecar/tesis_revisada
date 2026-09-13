@@ -66,23 +66,3 @@ for resource_name in resource_registry.entries:
         color = np.array(resource.color)
         ownable = False
         solid = False
-
-
-@landmark_registry.add
-class House(Landmark):
-    """House landmark. Ownable. Solid."""
-
-    name = "House"
-    color = np.array([220, 20, 220]) / 255.0
-    ownable = True
-    solid = True
-
-
-@landmark_registry.add
-class Water(Landmark):
-    """Water Landmark. Not ownable. Solid."""
-
-    name = "Water"
-    color = np.array([50, 50, 250]) / 255.0
-    ownable = False
-    solid = True

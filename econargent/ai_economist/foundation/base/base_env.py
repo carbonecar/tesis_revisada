@@ -87,12 +87,8 @@ class BaseEnvironment(ABC):
         # foundation.landmarks  <-- Landmark class registry
         # foundation.endogenous <-- Endogenous class registry
 
-        # see ../scenarios/simple_wood_and_stone/dynamic_layout.py
-        UniScenarioClass = foundation.scenarios.get("uniform/simple_wood_and_stone")
-
-        # see ../components/build.py and ../components/move.py
-        BuildComponentClass  = foundation.components.get("Build")
-        GatherComponentClass = foundation.components.get("Gather")
+        # see ../scenarios/one_step_economy/one_step_economy.py
+        ScenarioClass = foundation.scenarios.get("one-step-economy")
 
     Example:
         from ai_economist import foundation
